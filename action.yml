@@ -1,0 +1,27 @@
+name: 'WP Release Sign'
+description: 'Sign release files with Ed25519 in the format WordPress core verifies, writing a detached .sig next to each.'
+author: 'WP Elevator'
+branding:
+  icon: 'lock'
+  color: 'blue'
+
+inputs:
+  files:
+    description: 'Files to sign, one per line, such as the ZIP and the checksums manifest. Relative paths resolve from the repository root.'
+    required: true
+  signing-key:
+    description: 'Base64 Ed25519 32-byte seed or 64-byte libsodium secret key. Pass it from a secret. Defaults to the WP_RELEASE_SIGNING_KEY environment variable.'
+    default: ''
+  force:
+    description: 'Overwrite existing .sig files.'
+    default: 'false'
+
+outputs:
+  signatures:
+    description: 'Paths of the written .sig files, one per line.'
+  public-key:
+    description: 'Base64 public key of the signing key, for verifying the signatures.'
+
+runs:
+  using: 'node24'
+  main: 'dist/index.js'
