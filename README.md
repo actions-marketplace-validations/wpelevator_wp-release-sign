@@ -50,6 +50,17 @@ Sign the manifest after writing it and before zipping or deploying when it's shi
 | `signatures` | Paths of the written `.sig` files, one per line. |
 | `public-key` | Base64 public key of the signing key. |
 
+## Without the action
+
+When you can't use a GitHub Action, such as on another CI system or in a local release script, add the same tooling as a development dependency and run the CLI command that the action runs, passing the key in the `WP_RELEASE_SIGNING_KEY` environment variable from your CI secrets:
+
+```bash
+npm install --save-dev @wpelevator/wp-release
+npx wp-release sign my-plugin.1.0.0.zip my-plugin.1.0.0.checksums.json
+```
+
+The files are the arguments of [`wp-release sign`](../../js/wp-release#sign) and `force` is `--force`. There's no flag for the signing key, since it would show in the process list. Add `--verbose` to print the public key, which the action returns as the `public-key` output, or `--json` for the paths of the signatures. The CLI needs Node.js 22.12 or later, and has no other dependencies on the runner. Run `npx wp-release sign --help` for all options.
+
 ## How it works
 
 [`src/run.ts`](src/run.ts) reads the inputs with [`@actions/core`](https://github.com/actions/toolkit/tree/main/packages/core), maps them to the arguments of the [`wp-release sign`](https://www.npmjs.com/package/@wpelevator/wp-release#sign) command and runs it through the `execute()` function of [`@wpelevator/wp-release`](https://www.npmjs.com/package/@wpelevator/wp-release), so the action and the CLI always behave the same. The action runs `dist/index.js`, a single file bundled with esbuild that includes `wp-release` and all other dependencies, so nothing is installed from npm when the action runs. The tooling version is fixed by the action ref you pin.
