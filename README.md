@@ -18,12 +18,12 @@ jobs:
       - uses: actions/checkout@v7
 
       - id: zip
-        uses: wpelevator/wp-release-zip@0.1.0
+        uses: wpelevator/wp-release-zip@0.2.0
         with:
           checksums: true
 
       - id: sign
-        uses: wpelevator/wp-release-sign@0.1.0
+        uses: wpelevator/wp-release-sign@0.2.0
         with:
           files: |
             ${{ steps.zip.outputs.zip-path }}
@@ -49,6 +49,10 @@ Sign the manifest after writing it and before zipping or deploying when it's shi
 |---|---|
 | `signatures` | Paths of the written `.sig` files, one per line. |
 | `public-key` | Base64 public key of the signing key. |
+
+## Job summary
+
+Each run adds a section to the job summary of the run with the signature files and the public key, so it can be copied to where the signatures are checked. A failed run adds its error instead, and the run fails. The paths are relative to the workspace.
 
 ## Without the action
 
