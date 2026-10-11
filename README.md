@@ -31,9 +31,9 @@ jobs:
           signing-key: ${{ secrets.WP_RELEASE_SIGNING_KEY }}
 ```
 
-Attach the ZIP, the manifest and the two `.sig` files to the release. Publish the `public-key` output wherever the signatures are checked, such as the `signing_key` of [update-client](../../php/update-client), and check a signed manifest with `wp-release verify --public-key`.
+Attach the ZIP, the manifest and the two `.sig` files to the release. Publish the `public-key` output wherever the signatures are checked, such as the `signing_key` of [update-client](https://github.com/wpelevator/update-client), and check a signed manifest with `wp-release verify --public-key`.
 
-Sign the manifest after writing it and before zipping or deploying when it's shipped inside the plugin, because the signature covers the exact bytes of the file. See [Manifest inside the plugin](../../js/wp-release#manifest-inside-the-plugin).
+Sign the manifest after writing it and before zipping or deploying when it's shipped inside the plugin, because the signature covers the exact bytes of the file. See [Manifest inside the plugin](https://www.npmjs.com/package/@wpelevator/wp-release#manifest-inside-the-plugin).
 
 ## Inputs
 
@@ -59,7 +59,7 @@ npm install --save-dev @wpelevator/wp-release
 npx wp-release sign my-plugin.1.0.0.zip my-plugin.1.0.0.checksums.json
 ```
 
-The files are the arguments of [`wp-release sign`](../../js/wp-release#sign) and `force` is `--force`. There's no flag for the signing key, since it would show in the process list. Add `--verbose` to print the public key, which the action returns as the `public-key` output, or `--json` for the paths of the signatures. The CLI needs Node.js 22.12 or later, and has no other dependencies on the runner. Run `npx wp-release sign --help` for all options.
+The files are the arguments of [`wp-release sign`](https://www.npmjs.com/package/@wpelevator/wp-release#sign) and `force` is `--force`. There's no flag for the signing key, since it would show in the process list. Add `--verbose` to print the public key, which the action returns as the `public-key` output, or `--json` for the paths of the signatures. The CLI needs Node.js 22.12 or later, and has no other dependencies on the runner. Run `npx wp-release sign --help` for all options.
 
 ## How it works
 
