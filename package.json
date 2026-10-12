@@ -1,13 +1,13 @@
 {
 	"private": true,
 	"name": "@wpelevator/wp-release-sign-action",
-	"version": "0.2.3",
+	"version": "0.2.4",
 	"description": "GitHub Action: sign release files with Ed25519 in the format WordPress core verifies, writing a detached .sig next to each.",
 	"license": "MIT",
 	"type": "module",
 	"dependencies": {
 		"@actions/core": "^3.0.1",
-		"@wpelevator/wp-release": "0.10.0"
+		"@wpelevator/wp-release": "0.11.0"
 	},
 	"devDependencies": {
 		"@types/node": "^22.20.5",
