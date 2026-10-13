@@ -4,13 +4,13 @@
 
 GitHub Action that signs release files with Ed25519 using [`@wpelevator/wp-release`](https://www.npmjs.com/package/@wpelevator/wp-release). It's named after the [`wp-release sign`](https://www.npmjs.com/package/@wpelevator/wp-release#sign) command that it runs.
 
-**Status:** first release (0.x). Boolean inputs must be `true` or `false`; anything else fails the run.
-
 It writes a detached `<file>.sig` next to each file: a base64 Ed25519 signature of the raw SHA-384 digest of the file, the format that WordPress core's `verify_file_signature()` checks. Sign both the ZIP and the checksums manifest: the ZIP signature covers installs and updates, and the manifest signature covers the contents after unpacking.
 
 Set `format: wordpress,minisign,ssh` to also write signatures for `minisign -V` and `ssh-keygen -Y verify` with the `file` namespace. All formats use the same Ed25519 key. The default remains `wordpress`.
 
 ## Usage
+
+Use `true` or `false` for boolean inputs; the action validates these values before running the command.
 
 These actions require a runner with the Node.js 24 action runtime. Keep self-hosted runners updated before using them.
 
