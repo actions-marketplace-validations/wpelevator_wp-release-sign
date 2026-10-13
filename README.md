@@ -12,12 +12,16 @@ Set `format: wordpress,minisign,ssh` to also write signatures for `minisign -V` 
 
 ## Usage
 
-The `format`, `formats` and `public-keys` additions below are available on `main` until the next action release; pin the released version once it is available.
+These actions require a runner with the Node.js 24 action runtime. Keep self-hosted runners updated before using them.
+
+Pin `uses:` to the latest released version from the [releases page](https://github.com/wpelevator/wp-release-sign/releases). Upgrades are intentionally manual: floating major or minor tags are not published.
 
 ```yaml
 jobs:
   release:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
 
@@ -27,7 +31,7 @@ jobs:
           checksums: true
 
       - id: sign
-        uses: wpelevator/wp-release-sign@main
+        uses: wpelevator/wp-release-sign@0.2.7
         with:
           files: |
             ${{ steps.zip.outputs.zip-path }}
@@ -39,6 +43,8 @@ jobs:
 Attach the ZIP, the manifest and all the files listed in `steps.sign.outputs.signatures` to the release. Publish the `public-key` output wherever the signatures are checked, such as the `signing_key` of [update-client](https://github.com/wpelevator/update-client), and check a signed manifest with `wp-release verify --public-key`.
 
 Sign the manifest after writing it and before zipping or deploying when it's shipped inside the plugin, because the signature covers the exact bytes of the file. See [Manifest inside the plugin](https://www.npmjs.com/package/@wpelevator/wp-release#manifest-inside-the-plugin).
+
+The action itself needs only `contents: read` for checkout; signing uses the supplied secret. Set this permission on jobs using the step examples in this README.
 
 ## Inputs
 
