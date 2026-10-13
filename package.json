@@ -2,7 +2,7 @@
 	"private": true,
 	"name": "@wpelevator/wp-release-sign-action",
 	"version": "0.2.7",
-	"description": "GitHub Action: sign release files with Ed25519 in the format WordPress core verifies, writing a detached .sig next to each.",
+	"description": "GitHub Action: sign release files with Ed25519 in WordPress, minisign or SSH format, writing detached signatures next to each.",
 	"license": "MIT",
 	"type": "module",
 	"dependencies": {

@@ -13,8 +13,13 @@ export function getSignArgs(): string[] {
 		.map( ( file ) => file.trim() )
 		.filter( Boolean );
 	const force = getInput( 'force' ) && getBooleanInput( 'force' );
+	const format = getInput( 'format' );
 
-	return [ ...files, ...( force ? [ '--force' ] : [] ) ];
+	return [
+		...files,
+		...( format ? [ '--format', format ] : [] ),
+		...( force ? [ '--force' ] : [] ),
+	];
 }
 
 /**

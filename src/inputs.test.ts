@@ -15,6 +15,26 @@ test( 'reads one file per line', () => {
 	);
 } );
 
+test( 'passes signature formats through to wp-release', () => {
+	assert.deepEqual(
+		withEnv(
+			{
+				INPUT_FILES: 'a.zip',
+				INPUT_FORMAT: 'wordpress,minisign,ssh',
+				INPUT_FORCE: 'true',
+			},
+			getSignArgs
+		),
+		[ 'a.zip', '--format', 'wordpress,minisign,ssh', '--force' ],
+		'The action should let wp-release parse formats and overwrite signatures with force.'
+	);
+	assert.deepEqual(
+		withEnv( { INPUT_FILES: 'a.zip', INPUT_FORMAT: '' }, getSignArgs ),
+		[ 'a.zip' ],
+		'An empty format should preserve the WordPress signature default.'
+	);
+} );
+
 test( 'passes the signing key to wp-release through the environment', () => {
 	const original = process.env[ SIGNING_KEY_ENV ];
 

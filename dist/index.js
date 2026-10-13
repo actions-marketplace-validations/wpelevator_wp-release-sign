@@ -28081,6 +28081,16 @@ var TARGET_FLAGS = [
   "svn-url",
   "message"
 ];
+async function runDeploy2(input, logger2, runner) {
+  const options2 = resolveDeployOptions(input);
+  const svn = runner ? new Svn({
+    runner,
+    username: options2.svnUsername,
+    password: options2.svnPassword,
+    logger: logger2
+  }) : void 0;
+  return new SvnDeploy(options2, logger2, svn).run();
+}
 function getDeployInputFromArgs(input) {
   const { values, positionals, cwd } = input;
   const flag = (name) => getBoolean(values, name) || void 0;
@@ -28185,7 +28195,7 @@ Examples:
     ...packageDeployArgs,
     "dry-run": { type: "boolean" }
   },
-  async run({ values, positionals, cwd, configFile, tagFormat, logger: logger2 }) {
+  async run({ values, positionals, cwd, configFile, tagFormat, logger: logger2, svnRunner }) {
     const { ref, packages, list } = getPackageDeployArgs(values, positionals, TARGET_FLAGS);
     if (ref) {
       const deploys = await getSvnDeploys({
@@ -28196,14 +28206,13 @@ Examples:
         ...configFile ? { configFile } : {},
         ...tagFormat ? { tagFormat } : {}
       });
-      return list ? listPackageDeploys(deploys, logger2, ref) : runPackageDeploys(deploys, (input) => new SvnDeploy(resolveDeployOptions({
+      return list ? listPackageDeploys(deploys, logger2, ref) : runPackageDeploys(deploys, (input) => runDeploy2({
         ...input,
         svnUsername: getString(values, "svn-username"),
         force: getBoolean(values, "force")
-      }), logger2).run(), logger2, ref);
+      }, logger2, svnRunner), logger2, ref);
     }
-    const options2 = resolveDeployOptions(getDeployInputFromArgs({ values, positionals, cwd }));
-    const result = await new SvnDeploy(options2, logger2).run();
+    const result = await runDeploy2(getDeployInputFromArgs({ values, positionals, cwd }), logger2, svnRunner);
     return { exitCode: 0, result };
   }
 };
@@ -30576,7 +30585,12 @@ async function execute(name, args, context) {
 function getSignArgs() {
   const files = getInput("files").split("\n").map((file) => file.trim()).filter(Boolean);
   const force = getInput("force") && getBooleanInput("force");
-  return [...files, ...force ? ["--force"] : []];
+  const format = getInput("format");
+  return [
+    ...files,
+    ...format ? ["--format", format] : [],
+    ...force ? ["--force"] : []
+  ];
 }
 function exportSigningKey() {
   const key = getInput("signing-key");
@@ -30594,9 +30608,11 @@ try {
     cwd: process.env.GITHUB_WORKSPACE || process.cwd(),
     logger
   });
-  const { signatures, publicKey } = result;
+  const { signatures, publicKey, formats, publicKeys } = result;
   setOutput("signatures", signatures.join("\n"));
   setOutput("public-key", publicKey);
+  setOutput("formats", formats);
+  setOutput("public-keys", publicKeys);
 } catch (error) {
   logError(logger, error, "WP Release Sign");
   process.exitCode = 1;
