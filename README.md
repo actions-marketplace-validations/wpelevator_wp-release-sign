@@ -26,12 +26,12 @@ jobs:
       - uses: actions/checkout@v7
 
       - id: zip
-        uses: wpelevator/wp-release-zip@0.5.0
+        uses: wpelevator/wp-release-zip@0.6.0
         with:
           checksums: true
 
       - id: sign
-        uses: wpelevator/wp-release-sign@0.3.0
+        uses: wpelevator/wp-release-sign@0.3.1
         with:
           files: |
             ${{ steps.zip.outputs.zip-path }}
