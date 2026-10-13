@@ -16,10 +16,12 @@ try {
 		cwd: process.env.GITHUB_WORKSPACE || process.cwd(),
 		logger,
 	} );
-	const { signatures, publicKey } = result;
+	const { signatures, publicKey, formats, publicKeys } = result;
 
 	setOutput( 'signatures', signatures.join( '\n' ) );
 	setOutput( 'public-key', publicKey );
+	setOutput( 'formats', formats );
+	setOutput( 'public-keys', publicKeys );
 } catch ( error ) {
 	logError( logger, error, 'WP Release Sign' );
 	process.exitCode = 1;
