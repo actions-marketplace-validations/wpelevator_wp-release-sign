@@ -1,5 +1,5 @@
 name: 'WP Release Sign'
-description: 'Sign release files with Ed25519 in the format WordPress core verifies, writing a detached .sig next to each.'
+description: 'Sign release files with Ed25519 in WordPress, minisign or SSH format, writing detached signatures next to each.'
 author: 'WP Elevator'
 branding:
   icon: 'lock'
@@ -12,15 +12,22 @@ inputs:
   signing-key:
     description: 'Base64 Ed25519 32-byte seed or 64-byte libsodium secret key. Pass it from a secret. Defaults to the WP_RELEASE_SIGNING_KEY environment variable.'
     default: ''
+  format:
+    description: 'Signature formats to write, comma-separated: wordpress (.sig), minisign (.minisig), ssh (.sshsig). Defaults to wordpress.'
+    default: ''
   force:
-    description: 'Overwrite existing .sig files.'
+    description: 'Overwrite existing signature files.'
     default: 'false'
 
 outputs:
   signatures:
-    description: 'Paths of the written .sig files, one per line.'
+    description: 'Absolute paths of the written signature files, one per line.'
   public-key:
     description: 'Base64 public key of the signing key, for verifying the signatures.'
+  formats:
+    description: 'JSON array of the signature formats written.'
+  public-keys:
+    description: 'JSON object of the public key in wordpress, minisign and ssh forms.'
 
 runs:
   using: 'node24'
