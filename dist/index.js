@@ -88121,6 +88121,7 @@ function getStrings(values, name) {
 function createI18nCompileCommand(format) {
   return {
     name: `i18n-${format}`,
+    acceptsPositionals: true,
     usage: `i18n-${format} <file.po> [options]`,
     summary: `Compile translated PO into ${"php" === format ? "WordPress .l10n.php" : format.toUpperCase()} files.`,
     help: `Options:
@@ -91711,6 +91712,44 @@ import { basename as basename5, resolve as resolve7 } from "node:path";
 import { access as access2 } from "node:fs/promises";
 import path2 from "node:path";
 import { pathToFileURL } from "node:url";
+
+// ../../js/wp-release/dist/tag-format.js
+var DEFAULT_TAG_FORMAT = "{path}/{version}";
+function formatTemplate(format, pkg, version) {
+  return format.replaceAll("{name}", pkg.name).replaceAll("{path}", "." === pkg.path ? "" : pkg.path).replaceAll("{version}", version);
+}
+function formatTag(format, pkg, version) {
+  return formatTemplate(format, pkg, version).replace(/\/{2,}/g, "/").replace(/^\/+/, "");
+}
+
+// ../../js/wp-release/dist/release-title.js
+var RELEASE_TITLE_PLACEHOLDERS = [
+  "name",
+  "path",
+  "version",
+  "tag"
+];
+function assertReleaseTitlePlaceholders(label, template) {
+  if (!RELEASE_TITLE_PLACEHOLDERS.some((placeholder) => template.includes(`{${placeholder}}`))) {
+    throw new ValidationError(`${label} must contain one of {name}, {path}, {version} or {tag}; a template without them would name every release alike.`);
+  }
+}
+async function formatReleaseTitle(template, input) {
+  if ("function" === typeof template) {
+    const title = await template(input);
+    if ("string" !== typeof title) {
+      throw new ValidationError(`The releaseTitle callback didn't return a string for package "${input.package.name}".`);
+    }
+    return title;
+  }
+  assertReleaseTitlePlaceholders("The releaseTitle template", template);
+  return formatTemplate(template, { name: input.package.name, path: input.package.path }, input.version).replaceAll("{tag}", input.tag).replace(/\/{2,}/g, "/").replace(/^\/+/, "");
+}
+function getDefaultReleaseTitle(pkg, version) {
+  return "." === pkg.path ? version : `${pkg.name}@${version}`;
+}
+
+// ../../js/wp-release/dist/changeset-config.js
 var __rewriteRelativeImportExtension = function(path12, preserveJsx) {
   if (typeof path12 === "string" && /^\.\.?\//.test(path12)) {
     return path12.replace(/\.(tsx)$|((?:\.d)?)((?:\.[^./]+?)?)\.([cm]?)ts$/i, function(m, tsx, d, ext2, cm) {
@@ -91867,6 +91906,12 @@ function validateChangesetConfig(config, configFile) {
       }
     });
   }
+  if (void 0 !== candidate.releaseTitle && "string" !== typeof candidate.releaseTitle && "function" !== typeof candidate.releaseTitle) {
+    throw new ValidationError(`wp-release config ${configFile}.releaseTitle must be a template or a callback.`);
+  }
+  if ("string" === typeof candidate.releaseTitle) {
+    assertReleaseTitlePlaceholders(`wp-release config ${configFile}.releaseTitle`, candidate.releaseTitle);
+  }
   if (void 0 !== candidate.releaseNotes && "function" !== typeof candidate.releaseNotes) {
     throw new ValidationError(`wp-release config ${configFile}.releaseNotes must be a function.`);
   }
@@ -91876,6 +91921,9 @@ function validateChangesetConfig(config, configFile) {
       throw new ValidationError(`wp-release config ${configFile} has an invalid packages[${index}] entry.`);
     }
     validateI18nOptions(group.i18n, `${configFile}.packages[${index}].i18n`);
+    if (void 0 !== group.id && ("string" !== typeof group.id || !group.id.trim())) {
+      throw new ValidationError(`wp-release config ${configFile}.packages[${index}].id must be a non-empty string that names the package, like its slug.`);
+    }
     if (void 0 !== group.idFrom && !["path", "package.json#name", "composer.json#name"].includes(group.idFrom)) {
       throw new ValidationError(`wp-release config ${configFile} packages[${index}].idFrom is not supported.`);
     }
@@ -92012,15 +92060,6 @@ import path4 from "node:path";
 // ../../js/wp-release/dist/version-files.js
 import { access as access3, readFile as readFile10, writeFile as writeFile4 } from "node:fs/promises";
 import path3 from "node:path";
-
-// ../../js/wp-release/dist/tag-format.js
-var DEFAULT_TAG_FORMAT = "{path}/{version}";
-function formatTemplate(format, pkg, version) {
-  return format.replaceAll("{name}", pkg.name).replaceAll("{path}", "." === pkg.path ? "" : pkg.path).replaceAll("{version}", version);
-}
-function formatTag(format, pkg, version) {
-  return formatTemplate(format, pkg, version).replace(/\/{2,}/g, "/").replace(/^\/+/, "");
-}
 
 // ../../js/wp-release/dist/version-check.js
 var import_ignore2 = __toESM(require_ignore(), 1);
@@ -92384,7 +92423,7 @@ async function readVersion(repository, directory, descriptor, pkg) {
     if (versions[0]) {
       return versions[0];
     }
-    throw new ValidationError(`No git tag matches ${pattern} for ${pkg.path}.`);
+    throw new ValidationError(`No git tag matches ${pattern} for ${pkg.path}. A tag must end with a version, like ${formatTag(pattern, pkg, "1.2.3")}, and the tags must exist on the checked-out history. When the release tags are named by a different tagFormat, set the same pattern in gitTagVersion( { pattern } ) or --version-git-tag.`);
   }
   if ("php-constant" === descriptor.kind) {
     const file2 = path3.join(directory, descriptor.file);
@@ -92539,9 +92578,12 @@ async function findGroupPackages(repository, config, groups) {
     if (!matches.length) {
       throw new ValidationError(`Package glob "${group.glob}" did not match any directories under ${root}.`);
     }
+    if (group.id && 1 < matches.length) {
+      throw new ValidationError(`The package identifier "${group.id}" would name every one of the ${matches.length} directories that the glob "${group.glob}" matches; narrow the glob or use idFrom.`);
+    }
     for (const relativePath of matches) {
       const directory = path4.join(root, relativePath);
-      const name = await packageName(directory, relativePath, group.idFrom ?? "path");
+      const name = group.id ? group.id : await packageName(directory, relativePath, group.idFrom ?? "path");
       if (packages.some((pkg) => pkg.name === name)) {
         throw new ValidationError(`Package identifier "${name}" is configured more than once.`);
       }
@@ -92953,6 +92995,7 @@ function report(context, diagnostics, sourceDir) {
 function createI18nCommand(operation) {
   return {
     name: `i18n-${operation}`,
+    acceptsPositionals: true,
     usage: `i18n-${operation} [<source-dir>] [options]`,
     summary: "pot" === operation ? "Extract WordPress source strings into a reproducible POT." : "Audit WordPress source strings without writing files.",
     help: `Options:
@@ -94007,6 +94050,7 @@ function getGitDeploySummary(context, input) {
 // ../../js/wp-release/dist/commands/zip.js
 var zip_default = {
   name: "zip",
+  acceptsPositionals: true,
   usage: "zip [<source-dir>] [options] | zip --package <name> [options]",
   summary: "Create a ZIP archive of a plugin or theme with a {slug}/ root folder.",
   help: `Arguments:
@@ -94267,6 +94311,7 @@ async function buildPackage(input) {
 // ../../js/wp-release/dist/commands/build.js
 var build_default = {
   name: "build",
+  acceptsPositionals: true,
   usage: "build [<source-dir>] --output <dir> [options] | build --package <name> --output <dir>",
   summary: "Copy the selected release files into an output directory.",
   help: `Options:
@@ -94346,6 +94391,7 @@ import { mkdir as mkdir6, writeFile as writeFile7 } from "node:fs/promises";
 import { dirname as dirname7, basename as basename11, resolve as resolve16 } from "node:path";
 var checksums_default = {
   name: "checksums",
+  acceptsPositionals: true,
   usage: "checksums [<source-dir>] [options]",
   summary: "Write the MD5 and SHA-256 hashes of every distributed file to a checksums manifest.",
   help: `Arguments:
@@ -94435,6 +94481,7 @@ matches the ZIP contents.`,
 import { resolve as resolve17 } from "node:path";
 var sign_default = {
   name: "sign",
+  acceptsPositionals: true,
   usage: "sign <file>... [options]",
   summary: "Sign files with Ed25519, writing a detached <file>.sig next to each.",
   help: `Arguments:
@@ -94807,6 +94854,7 @@ async function verifyTarget(input) {
 }
 var verify_default = {
   name: "verify",
+  acceptsPositionals: true,
   usage: "verify [<source-dir>] --checksums <file> [options]",
   summary: "Check the files of a plugin or theme directory or ZIP against a checksums manifest.",
   help: `Arguments:
@@ -94930,6 +94978,7 @@ function getGitTag(gitTag) {
 }
 var version_check_default = {
   name: "version-check",
+  acceptsPositionals: true,
   usage: "version-check [<source-dir>] [options]",
   summary: "Check that the Version header, readme Stable tag, constants and git tag agree.",
   help: `Arguments:
@@ -96007,6 +96056,7 @@ function getDeployInputFromArgs(input) {
 }
 var deploy_svn_default = {
   name: "deploy-svn",
+  acceptsPositionals: true,
   usage: "deploy-svn [<source-dir>] [options] | deploy-svn --release-ref <ref> [--package <name>] [--list] [--dry-run]",
   summary: "Deploy a plugin to the WordPress.org plugin SVN repository.",
   help: `Arguments:
@@ -96520,6 +96570,7 @@ function getGitDeployInputFromArgs(values, positionals, cwd) {
 }
 var deploy_git_default = {
   name: "deploy-git",
+  acceptsPositionals: true,
   usage: "deploy-git [<source-dir>] --git-url <url> [options] | deploy-git --release-ref <ref> [--package <name>] [--list] [--dry-run]",
   summary: "Deploy the files of a plugin, theme or package to a Git repository as a release commit.",
   help: `Arguments:
@@ -96692,6 +96743,7 @@ var changesetProjectArgs = {
   "version-php-constant": { type: "string", multiple: true },
   "version-git-tag": { type: "string", multiple: true },
   "version-from": { type: "string" },
+  "project-name": { type: "string" },
   "base-branch": { type: "string" },
   remote: { type: "string" },
   "changesets-dir": { type: "string" },
@@ -96709,6 +96761,9 @@ Single-project options (without a release config file):
   --version-php-constant <file>#<constant>  PHP constant source/target (repeatable)
   --version-git-tag <pattern>               Git tag source only; use {version}
   --version-from <kind>[:<file>]            Choose the source; constants use file#constant
+  --project-name <name>                    Changeset identifier of the package,
+                                           instead of the manifest name or the
+                                           checkout directory basename
   --base-branch <branch>                   Default comparison branch on the remote
   --remote <name>                          Git remote (default: origin)
   --changesets-dir <dir>                   Changeset directory (default: .changeset)
@@ -96762,6 +96817,7 @@ function parseChangesetProjectArgs(values) {
   }
   const strings = {
     "version-from": "versionFrom",
+    "project-name": "projectName",
     "base-branch": "baseBranch",
     remote: "remote",
     "changesets-dir": "changesets",
@@ -97156,7 +97212,13 @@ async function resolveSingleProjectConfig(cwd, options2 = {}, tagFormat) {
     root: ".",
     changesets: options2.changesets ?? ".changeset",
     tagFormat: tagFormat ?? "v{version}",
-    packages: [{ glob: ".", idFrom, version: { from, to: targets } }]
+    packages: [
+      {
+        glob: ".",
+        ...options2.projectName ? { id: options2.projectName } : { idFrom },
+        version: { from, to: targets }
+      }
+    ]
   };
 }
 
@@ -97763,8 +97825,9 @@ var FileJournal = class {
 
 // ../../js/wp-release/dist/release-tags.js
 function selectTagPackages(packages, names, version) {
-  if (void 0 !== version && !names.length && 1 === packages.length && "." === packages[0]?.path) {
-    names = [packages[0].name];
+  const sole = 1 === packages.length ? packages[0] : void 0;
+  if (void 0 !== version && !names.length && sole) {
+    names = [sole.name];
   }
   if (void 0 !== version && 1 !== names.length) {
     throw new ValidationError("An expected version requires exactly one package.");
@@ -97800,6 +97863,18 @@ async function getReleaseNotes(repository, config, pkg, release, end) {
     throw new ValidationError(`The releaseNotes formatter didn't return a string for package "${pkg.name}".`);
   }
   return formatted.trim();
+}
+async function getReleaseTitle(config, pkg, version, tag) {
+  const untrimmed = config.releaseTitle ? await formatReleaseTitle(config.releaseTitle, {
+    package: toChangesetPackage(pkg),
+    version,
+    tag
+  }) : getDefaultReleaseTitle(pkg, version);
+  const title = untrimmed.trim();
+  if (!title) {
+    throw new ValidationError(`The release title of package "${pkg.name}" must not be empty.`);
+  }
+  return title;
 }
 
 // ../../js/wp-release/dist/changeset-release.js
@@ -97934,6 +98009,10 @@ var ChangesetRelease = class {
       throw new ValidationError("Listing untagged releases cannot be combined with pushing tags.");
     }
     const context = await this.requireContext();
+    if (void 0 !== options2.releaseTitle) {
+      assertReleaseTitlePlaceholders("--release-title", options2.releaseTitle);
+    }
+    const config = options2.releaseTitle ? { ...context.config, releaseTitle: options2.releaseTitle } : context.config;
     const selected = selectTagPackages(context.packages, resolvePackageNames(context.packages, options2.packages ?? []), options2.version);
     const packages = options2.since ? (await getChangedPackages(this.repository, selected, options2.since)).packages : selected;
     const results = [];
@@ -97945,6 +98024,7 @@ var ChangesetRelease = class {
         throw new ValidationError(`Package "${pkg.name}" is at version ${version}, not ${options2.version}.`);
       }
       const tag = formatTag(tagFormat, pkg, version);
+      const title = await getReleaseTitle(config, pkg, version, tag);
       const exists2 = await this.repository.tagExists(tag);
       if (!exists2) {
         await verifyVersionTargets(this.repository, pkg, version);
@@ -97958,7 +98038,7 @@ var ChangesetRelease = class {
         package: pkg.name,
         version,
         tag,
-        title: `${pkg.name}@${version}`,
+        title,
         ...previousTag ? { previousTag } : {},
         prerelease: isPrerelease2(version),
         exists: exists2,
@@ -98335,7 +98415,8 @@ var changesetTagArgs = {
   untagged: { type: "boolean" },
   since: { type: "string" },
   package: { type: "string", multiple: true },
-  version: { type: "string" }
+  version: { type: "string" },
+  "release-title": { type: "string" }
 };
 function parseChangesetTagArgs(values) {
   const args = {
@@ -98344,7 +98425,8 @@ function parseChangesetTagArgs(values) {
     untagged: getBoolean(values, "untagged"),
     since: getString(values, "since"),
     packages: getStrings(values, "package"),
-    version: getString(values, "version")?.trim()
+    version: getString(values, "version")?.trim(),
+    releaseTitle: getString(values, "release-title")?.trim()
   };
   if ("" === args.since?.trim()) {
     throw new ValidationError("--since <ref> must not be empty.");
@@ -98354,6 +98436,9 @@ function parseChangesetTagArgs(values) {
   }
   if ("" === args.version) {
     throw new ValidationError("--version <version> must not be empty.");
+  }
+  if ("" === args.releaseTitle) {
+    throw new ValidationError("--release-title <template> must not be empty.");
   }
   if (void 0 !== args.version && args.packages.length > 1) {
     throw new ValidationError("--version <version> accepts at most one --package <name>.");
@@ -98367,7 +98452,7 @@ function parseChangesetTagArgs(values) {
 // ../../js/wp-release/dist/commands/changeset-add.js
 async function getChangedPackageBumps(release, input, bump) {
   const packages = await release.getPackages();
-  if (!input.since && 1 === packages.length && "." === packages[0]?.path) {
+  if (!input.since && 1 === packages.length && packages[0]) {
     return { [packages[0].name]: bump };
   }
   const status = await release.getStatus({
@@ -98433,11 +98518,12 @@ var changeset_add_default = {
 
 Use --package and --bump pairs for package releases, or --empty for changes
 that should pass the status check without producing a release. A single
---bump without --package selects the sole root package, or releases packages
-that changed since the base
-ref, including uncommitted files, and have no changeset yet. Without
---package and --bump in a terminal, the command asks for the packages, with
-the changed ones preselected, their bumps and the release note.${changesetProjectHelp}`,
+--bump without --package releases the sole package of the repository, or,
+with more than one package, the packages that changed since the base ref,
+including uncommitted files, and have no changeset yet. --since selects
+the changed packages instead. Without --package and --bump in a terminal,
+the command asks for the packages, with the changed ones preselected, their
+bumps and the release note.${changesetProjectHelp}`,
   options: { ...changesetAddArgs, ...changesetProjectArgs },
   async run({ values, cwd, configFile, tagFormat, logger: logger2, terminal }) {
     const input = parseChangesetAddArgs(values);
@@ -98610,7 +98696,12 @@ var changeset_tag_default = {
                          the configured root (repeatable)
   --version <version>    Fail unless the selected package is at this version;
                          the version to tag for packages versioned by git tags.
-                         A sole root package is selected without --package
+                         A sole package is selected without --package
+  --release-title <t>    Title of the releases, like 'Release {version}',
+                         replacing the releaseTitle of the config. The
+                         placeholders {name}, {path}, {version} and {tag} are
+                         replaced; the default is name@version, or the
+                         version for a package at the repository root
   --push                 Push newly created tags to the configured remote
                          (default: origin), one at a time
 
@@ -98689,6 +98780,11 @@ function getConfigArgs(values) {
     ...tagFormat ? { tagFormat } : {}
   };
 }
+function rejectPositionals(command, positionals) {
+  if (!command.acceptsPositionals && positionals.length) {
+    throw new ValidationError(`wp-release ${command.name} does not accept positional arguments, like "${positionals[0]}"; pass a named option instead, or ${command.name} --help for the usage.`);
+  }
+}
 async function execute(name, args, context) {
   const command = commands.find(({ name: commandName }) => name === commandName);
   if (!command) {
@@ -98699,6 +98795,7 @@ async function execute(name, args, context) {
     options: { ...globalArgs, ...command.options },
     allowPositionals: true
   });
+  rejectPositionals(command, positionals);
   const configArgs = getConfigArgs(values);
   const configFile = configArgs.configFile ?? context.configFile;
   const { tagFormat } = configArgs;
