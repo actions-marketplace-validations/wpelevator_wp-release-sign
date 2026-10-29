@@ -70720,9 +70720,11 @@ var require_sourcemap_codec_umd = __commonJS({
         decode: () => decode,
         decodeGeneratedRanges: () => decodeGeneratedRanges,
         decodeOriginalScopes: () => decodeOriginalScopes,
+        decodeRangeMappings: () => decodeRangeMappings,
         encode: () => encode,
         encodeGeneratedRanges: () => encodeGeneratedRanges,
-        encodeOriginalScopes: () => encodeOriginalScopes
+        encodeOriginalScopes: () => encodeOriginalScopes,
+        encodeRangeMappings: () => encodeRangeMappings
       });
       module2.exports = __toCommonJS(sourcemap_codec_exports);
       var comma = ",".charCodeAt(0);
@@ -70735,7 +70737,7 @@ var require_sourcemap_codec_umd = __commonJS({
         intToChar[i] = c;
         charToInt[c] = i;
       }
-      function decodeInteger(reader, relative6) {
+      function decodeInteger(reader) {
         let value = 0;
         let shift = 0;
         let integer = 0;
@@ -70745,23 +70747,21 @@ var require_sourcemap_codec_umd = __commonJS({
           value |= (integer & 31) << shift;
           shift += 5;
         } while (integer & 32);
-        const shouldNegate = value & 1;
-        value >>>= 1;
-        if (shouldNegate) {
-          value = -2147483648 | -value;
-        }
-        return relative6 + value;
+        return value;
       }
-      function encodeInteger(builder, num, relative6) {
-        let delta = num - relative6;
-        delta = delta < 0 ? -delta << 1 | 1 : delta << 1;
+      function decodeSign(num) {
+        return num & 1 ? -2147483648 | -(num >>> 1) : num >>> 1;
+      }
+      function encodeInteger(builder, num) {
         do {
-          let clamped = delta & 31;
-          delta >>>= 5;
-          if (delta > 0) clamped |= 32;
+          let clamped = num & 31;
+          num >>>= 5;
+          if (num > 0) clamped |= 32;
           builder.write(intToChar[clamped]);
-        } while (delta > 0);
-        return num;
+        } while (num > 0);
+      }
+      function encodeSign(num) {
+        return num < 0 ? -num << 1 | 1 : num << 1;
       }
       function hasMoreVlq(reader, max) {
         if (reader.pos >= max) return false;
@@ -70826,23 +70826,23 @@ var require_sourcemap_codec_umd = __commonJS({
         const stack = [];
         let line = 0;
         for (; reader.pos < length; reader.pos++) {
-          line = decodeInteger(reader, line);
-          const column = decodeInteger(reader, 0);
+          line += decodeSign(decodeInteger(reader));
+          const column = decodeSign(decodeInteger(reader));
           if (!hasMoreVlq(reader, length)) {
             const last = stack.pop();
             last[2] = line;
             last[3] = column;
             continue;
           }
-          const kind = decodeInteger(reader, 0);
-          const fields = decodeInteger(reader, 0);
+          const kind = decodeSign(decodeInteger(reader));
+          const fields = decodeSign(decodeInteger(reader));
           const hasName = fields & 1;
-          const scope = hasName ? [line, column, 0, 0, kind, decodeInteger(reader, 0)] : [line, column, 0, 0, kind];
+          const scope = hasName ? [line, column, 0, 0, kind, decodeSign(decodeInteger(reader))] : [line, column, 0, 0, kind];
           let vars = EMPTY;
           if (hasMoreVlq(reader, length)) {
             vars = [];
             do {
-              const varsIndex = decodeInteger(reader, 0);
+              const varsIndex = decodeSign(decodeInteger(reader));
               vars.push(varsIndex);
             } while (hasMoreVlq(reader, length));
           }
@@ -70863,14 +70863,15 @@ var require_sourcemap_codec_umd = __commonJS({
         const scope = scopes[index];
         const { 0: startLine, 1: startColumn, 2: endLine, 3: endColumn, 4: kind, vars } = scope;
         if (index > 0) writer.write(comma);
-        state[0] = encodeInteger(writer, startLine, state[0]);
-        encodeInteger(writer, startColumn, 0);
-        encodeInteger(writer, kind, 0);
+        encodeInteger(writer, encodeSign(startLine - state[0]));
+        state[0] = startLine;
+        encodeInteger(writer, encodeSign(startColumn));
+        encodeInteger(writer, encodeSign(kind));
         const fields = scope.length === 6 ? 1 : 0;
-        encodeInteger(writer, fields, 0);
-        if (scope.length === 6) encodeInteger(writer, scope[5], 0);
+        encodeInteger(writer, encodeSign(fields));
+        if (scope.length === 6) encodeInteger(writer, encodeSign(scope[5]));
         for (const v of vars) {
-          encodeInteger(writer, v, 0);
+          encodeInteger(writer, encodeSign(v));
         }
         for (index++; index < scopes.length; ) {
           const next = scopes[index];
@@ -70881,8 +70882,9 @@ var require_sourcemap_codec_umd = __commonJS({
           index = _encodeOriginalScopes(scopes, index, writer, state);
         }
         writer.write(comma);
-        state[0] = encodeInteger(writer, endLine, state[0]);
-        encodeInteger(writer, endColumn, 0);
+        encodeInteger(writer, encodeSign(endLine - state[0]));
+        state[0] = endLine;
+        encodeInteger(writer, encodeSign(endColumn));
         return index;
       }
       function decodeGeneratedRanges(input) {
@@ -70902,14 +70904,14 @@ var require_sourcemap_codec_umd = __commonJS({
           const semi = reader.indexOf(";");
           let genColumn = 0;
           for (; reader.pos < semi; reader.pos++) {
-            genColumn = decodeInteger(reader, genColumn);
+            genColumn += decodeSign(decodeInteger(reader));
             if (!hasMoreVlq(reader, semi)) {
               const last = stack.pop();
               last[2] = genLine;
               last[3] = genColumn;
               continue;
             }
-            const fields = decodeInteger(reader, 0);
+            const fields = decodeSign(decodeInteger(reader));
             const hasDefinition = fields & 1;
             const hasCallsite = fields & 2;
             const hasScope = fields & 4;
@@ -70917,11 +70919,8 @@ var require_sourcemap_codec_umd = __commonJS({
             let bindings = EMPTY;
             let range2;
             if (hasDefinition) {
-              const defSourcesIndex = decodeInteger(reader, definitionSourcesIndex);
-              definitionScopeIndex = decodeInteger(
-                reader,
-                definitionSourcesIndex === defSourcesIndex ? definitionScopeIndex : 0
-              );
+              const defSourcesIndex = definitionSourcesIndex + decodeSign(decodeInteger(reader));
+              definitionScopeIndex = decodeSign(decodeInteger(reader)) + (definitionSourcesIndex === defSourcesIndex ? definitionScopeIndex : 0);
               definitionSourcesIndex = defSourcesIndex;
               range2 = [genLine, genColumn, 0, 0, defSourcesIndex, definitionScopeIndex];
             } else {
@@ -70931,13 +70930,10 @@ var require_sourcemap_codec_umd = __commonJS({
             if (hasCallsite) {
               const prevCsi = callsiteSourcesIndex;
               const prevLine = callsiteLine;
-              callsiteSourcesIndex = decodeInteger(reader, callsiteSourcesIndex);
+              callsiteSourcesIndex += decodeSign(decodeInteger(reader));
               const sameSource = prevCsi === callsiteSourcesIndex;
-              callsiteLine = decodeInteger(reader, sameSource ? callsiteLine : 0);
-              callsiteColumn = decodeInteger(
-                reader,
-                sameSource && prevLine === callsiteLine ? callsiteColumn : 0
-              );
+              callsiteLine = (sameSource ? callsiteLine : 0) + decodeSign(decodeInteger(reader));
+              callsiteColumn = (sameSource && prevLine === callsiteLine ? callsiteColumn : 0) + decodeSign(decodeInteger(reader));
               callsite = [callsiteSourcesIndex, callsiteLine, callsiteColumn];
             }
             range2.callsite = callsite;
@@ -70946,15 +70942,15 @@ var require_sourcemap_codec_umd = __commonJS({
               do {
                 bindingLine = genLine;
                 bindingColumn = genColumn;
-                const expressionsCount = decodeInteger(reader, 0);
+                const expressionsCount = decodeSign(decodeInteger(reader));
                 let expressionRanges;
                 if (expressionsCount < -1) {
-                  expressionRanges = [[decodeInteger(reader, 0)]];
+                  expressionRanges = [[decodeSign(decodeInteger(reader))]];
                   for (let i = -1; i > expressionsCount; i--) {
                     const prevBl = bindingLine;
-                    bindingLine = decodeInteger(reader, bindingLine);
-                    bindingColumn = decodeInteger(reader, bindingLine === prevBl ? bindingColumn : 0);
-                    const expression = decodeInteger(reader, 0);
+                    bindingLine += decodeSign(decodeInteger(reader));
+                    bindingColumn = (bindingLine === prevBl ? bindingColumn : 0) + decodeSign(decodeInteger(reader));
+                    const expression = decodeSign(decodeInteger(reader));
                     expressionRanges.push([expression, bindingLine, bindingColumn]);
                   }
                 } else {
@@ -70998,16 +70994,19 @@ var require_sourcemap_codec_umd = __commonJS({
         } else if (index > 0) {
           writer.write(comma);
         }
-        state[1] = encodeInteger(writer, range2[1], state[1]);
+        encodeInteger(writer, encodeSign(range2[1] - state[1]));
+        state[1] = range2[1];
         const fields = (range2.length === 6 ? 1 : 0) | (callsite ? 2 : 0) | (isScope ? 4 : 0);
-        encodeInteger(writer, fields, 0);
+        encodeInteger(writer, encodeSign(fields));
         if (range2.length === 6) {
           const { 4: sourcesIndex, 5: scopesIndex } = range2;
           if (sourcesIndex !== state[2]) {
             state[3] = 0;
           }
-          state[2] = encodeInteger(writer, sourcesIndex, state[2]);
-          state[3] = encodeInteger(writer, scopesIndex, state[3]);
+          encodeInteger(writer, encodeSign(sourcesIndex - state[2]));
+          state[2] = sourcesIndex;
+          encodeInteger(writer, encodeSign(scopesIndex - state[3]));
+          state[3] = scopesIndex;
         }
         if (callsite) {
           const { 0: sourcesIndex, 1: callLine, 2: callColumn } = range2.callsite;
@@ -71017,22 +71016,27 @@ var require_sourcemap_codec_umd = __commonJS({
           } else if (callLine !== state[5]) {
             state[6] = 0;
           }
-          state[4] = encodeInteger(writer, sourcesIndex, state[4]);
-          state[5] = encodeInteger(writer, callLine, state[5]);
-          state[6] = encodeInteger(writer, callColumn, state[6]);
+          encodeInteger(writer, encodeSign(sourcesIndex - state[4]));
+          state[4] = sourcesIndex;
+          encodeInteger(writer, encodeSign(callLine - state[5]));
+          state[5] = callLine;
+          encodeInteger(writer, encodeSign(callColumn - state[6]));
+          state[6] = callColumn;
         }
         if (bindings) {
           for (const binding of bindings) {
-            if (binding.length > 1) encodeInteger(writer, -binding.length, 0);
+            if (binding.length > 1) encodeInteger(writer, encodeSign(-binding.length));
             const expression = binding[0][0];
-            encodeInteger(writer, expression, 0);
+            encodeInteger(writer, encodeSign(expression));
             let bindingStartLine = startLine;
             let bindingStartColumn = startColumn;
             for (let i = 1; i < binding.length; i++) {
               const expRange = binding[i];
-              bindingStartLine = encodeInteger(writer, expRange[1], bindingStartLine);
-              bindingStartColumn = encodeInteger(writer, expRange[2], bindingStartColumn);
-              encodeInteger(writer, expRange[0], 0);
+              encodeInteger(writer, encodeSign(expRange[1] - bindingStartLine));
+              bindingStartLine = expRange[1];
+              encodeInteger(writer, encodeSign(expRange[2] - bindingStartColumn));
+              bindingStartColumn = expRange[2];
+              encodeInteger(writer, encodeSign(expRange[0]));
             }
           }
         }
@@ -71051,13 +71055,46 @@ var require_sourcemap_codec_umd = __commonJS({
         } else {
           writer.write(comma);
         }
-        state[1] = encodeInteger(writer, endColumn, state[1]);
+        encodeInteger(writer, encodeSign(endColumn - state[1]));
+        state[1] = endColumn;
         return index;
       }
       function catchupLine(writer, lastLine, line) {
         do {
           writer.write(semicolon);
         } while (++lastLine < line);
+      }
+      function decodeRangeMappings(input) {
+        const { length } = input;
+        const reader = new StringReader(input);
+        const rangeMappings = [];
+        do {
+          const semi = reader.indexOf(";");
+          const indices = [];
+          let index = 0;
+          while (reader.pos < semi) {
+            index += decodeInteger(reader);
+            indices.push(index);
+          }
+          rangeMappings.push(indices);
+          reader.pos = semi + 1;
+        } while (reader.pos <= length);
+        return rangeMappings;
+      }
+      function encodeRangeMappings(decoded) {
+        if (decoded.length === 0) return "";
+        const writer = new StringWriter();
+        for (let i = 0; i < decoded.length; i++) {
+          const indices = decoded[i];
+          if (i > 0) writer.write(semicolon);
+          let index = 0;
+          for (let j = 0; j < indices.length; j++) {
+            const offset = indices[j];
+            encodeInteger(writer, offset - index);
+            index = offset;
+          }
+        }
+        return writer.flush();
       }
       function decode(mappings) {
         const { length } = mappings;
@@ -71076,15 +71113,15 @@ var require_sourcemap_codec_umd = __commonJS({
           genColumn = 0;
           while (reader.pos < semi) {
             let seg;
-            genColumn = decodeInteger(reader, genColumn);
+            genColumn += decodeSign(decodeInteger(reader));
             if (genColumn < lastCol) sorted = false;
             lastCol = genColumn;
             if (hasMoreVlq(reader, semi)) {
-              sourcesIndex = decodeInteger(reader, sourcesIndex);
-              sourceLine = decodeInteger(reader, sourceLine);
-              sourceColumn = decodeInteger(reader, sourceColumn);
+              sourcesIndex += decodeSign(decodeInteger(reader));
+              sourceLine += decodeSign(decodeInteger(reader));
+              sourceColumn += decodeSign(decodeInteger(reader));
               if (hasMoreVlq(reader, semi)) {
-                namesIndex = decodeInteger(reader, namesIndex);
+                namesIndex += decodeSign(decodeInteger(reader));
                 seg = [genColumn, sourcesIndex, sourceLine, sourceColumn, namesIndex];
               } else {
                 seg = [genColumn, sourcesIndex, sourceLine, sourceColumn];
@@ -71121,13 +71158,18 @@ var require_sourcemap_codec_umd = __commonJS({
           for (let j = 0; j < line.length; j++) {
             const segment = line[j];
             if (j > 0) writer.write(comma);
-            genColumn = encodeInteger(writer, segment[0], genColumn);
+            encodeInteger(writer, encodeSign(segment[0] - genColumn));
+            genColumn = segment[0];
             if (segment.length === 1) continue;
-            sourcesIndex = encodeInteger(writer, segment[1], sourcesIndex);
-            sourceLine = encodeInteger(writer, segment[2], sourceLine);
-            sourceColumn = encodeInteger(writer, segment[3], sourceColumn);
+            encodeInteger(writer, encodeSign(segment[1] - sourcesIndex));
+            encodeInteger(writer, encodeSign(segment[2] - sourceLine));
+            encodeInteger(writer, encodeSign(segment[3] - sourceColumn));
+            sourcesIndex = segment[1];
+            sourceLine = segment[2];
+            sourceColumn = segment[3];
             if (segment.length === 4) continue;
-            namesIndex = encodeInteger(writer, segment[4], namesIndex);
+            encodeInteger(writer, encodeSign(segment[4] - namesIndex));
+            namesIndex = segment[4];
           }
         }
         return writer.flush();
@@ -88121,6 +88163,7 @@ function getStrings(values, name) {
 function createI18nCompileCommand(format) {
   return {
     name: `i18n-${format}`,
+    acceptsPositionals: true,
     usage: `i18n-${format} <file.po> [options]`,
     summary: `Compile translated PO into ${"php" === format ? "WordPress .l10n.php" : format.toUpperCase()} files.`,
     help: `Options:
@@ -91711,6 +91754,44 @@ import { basename as basename5, resolve as resolve7 } from "node:path";
 import { access as access2 } from "node:fs/promises";
 import path2 from "node:path";
 import { pathToFileURL } from "node:url";
+
+// ../../js/wp-release/dist/tag-format.js
+var DEFAULT_TAG_FORMAT = "{path}/{version}";
+function formatTemplate(format, pkg, version) {
+  return format.replaceAll("{name}", pkg.name).replaceAll("{path}", "." === pkg.path ? "" : pkg.path).replaceAll("{version}", version);
+}
+function formatTag(format, pkg, version) {
+  return formatTemplate(format, pkg, version).replace(/\/{2,}/g, "/").replace(/^\/+/, "");
+}
+
+// ../../js/wp-release/dist/release-title.js
+var RELEASE_TITLE_PLACEHOLDERS = [
+  "name",
+  "path",
+  "version",
+  "tag"
+];
+function assertReleaseTitlePlaceholders(label, template) {
+  if (!RELEASE_TITLE_PLACEHOLDERS.some((placeholder) => template.includes(`{${placeholder}}`))) {
+    throw new ValidationError(`${label} must contain one of {name}, {path}, {version} or {tag}; a template without them would name every release alike.`);
+  }
+}
+async function formatReleaseTitle(template, input) {
+  if ("function" === typeof template) {
+    const title = await template(input);
+    if ("string" !== typeof title) {
+      throw new ValidationError(`The releaseTitle callback didn't return a string for package "${input.package.name}".`);
+    }
+    return title;
+  }
+  assertReleaseTitlePlaceholders("The releaseTitle template", template);
+  return formatTemplate(template, { name: input.package.name, path: input.package.path }, input.version).replaceAll("{tag}", input.tag).replace(/\/{2,}/g, "/").replace(/^\/+/, "");
+}
+function getDefaultReleaseTitle(pkg, version) {
+  return "." === pkg.path ? version : `${pkg.name}@${version}`;
+}
+
+// ../../js/wp-release/dist/changeset-config.js
 var __rewriteRelativeImportExtension = function(path12, preserveJsx) {
   if (typeof path12 === "string" && /^\.\.?\//.test(path12)) {
     return path12.replace(/\.(tsx)$|((?:\.d)?)((?:\.[^./]+?)?)\.([cm]?)ts$/i, function(m, tsx, d, ext2, cm) {
@@ -91867,6 +91948,12 @@ function validateChangesetConfig(config, configFile) {
       }
     });
   }
+  if (void 0 !== candidate.releaseTitle && "string" !== typeof candidate.releaseTitle && "function" !== typeof candidate.releaseTitle) {
+    throw new ValidationError(`wp-release config ${configFile}.releaseTitle must be a template or a callback.`);
+  }
+  if ("string" === typeof candidate.releaseTitle) {
+    assertReleaseTitlePlaceholders(`wp-release config ${configFile}.releaseTitle`, candidate.releaseTitle);
+  }
   if (void 0 !== candidate.releaseNotes && "function" !== typeof candidate.releaseNotes) {
     throw new ValidationError(`wp-release config ${configFile}.releaseNotes must be a function.`);
   }
@@ -91876,6 +91963,9 @@ function validateChangesetConfig(config, configFile) {
       throw new ValidationError(`wp-release config ${configFile} has an invalid packages[${index}] entry.`);
     }
     validateI18nOptions(group.i18n, `${configFile}.packages[${index}].i18n`);
+    if (void 0 !== group.id && ("string" !== typeof group.id || !group.id.trim())) {
+      throw new ValidationError(`wp-release config ${configFile}.packages[${index}].id must be a non-empty string that names the package, like its slug.`);
+    }
     if (void 0 !== group.idFrom && !["path", "package.json#name", "composer.json#name"].includes(group.idFrom)) {
       throw new ValidationError(`wp-release config ${configFile} packages[${index}].idFrom is not supported.`);
     }
@@ -92012,15 +92102,6 @@ import path4 from "node:path";
 // ../../js/wp-release/dist/version-files.js
 import { access as access3, readFile as readFile10, writeFile as writeFile4 } from "node:fs/promises";
 import path3 from "node:path";
-
-// ../../js/wp-release/dist/tag-format.js
-var DEFAULT_TAG_FORMAT = "{path}/{version}";
-function formatTemplate(format, pkg, version) {
-  return format.replaceAll("{name}", pkg.name).replaceAll("{path}", "." === pkg.path ? "" : pkg.path).replaceAll("{version}", version);
-}
-function formatTag(format, pkg, version) {
-  return formatTemplate(format, pkg, version).replace(/\/{2,}/g, "/").replace(/^\/+/, "");
-}
 
 // ../../js/wp-release/dist/version-check.js
 var import_ignore2 = __toESM(require_ignore(), 1);
@@ -92384,7 +92465,7 @@ async function readVersion(repository, directory, descriptor, pkg) {
     if (versions[0]) {
       return versions[0];
     }
-    throw new ValidationError(`No git tag matches ${pattern} for ${pkg.path}.`);
+    throw new ValidationError(`No git tag matches ${pattern} for ${pkg.path}. A tag must end with a version, like ${formatTag(pattern, pkg, "1.2.3")}, and the tags must exist on the checked-out history. When the release tags are named by a different tagFormat, set the same pattern in gitTagVersion( { pattern } ) or --version-git-tag.`);
   }
   if ("php-constant" === descriptor.kind) {
     const file2 = path3.join(directory, descriptor.file);
@@ -92539,9 +92620,12 @@ async function findGroupPackages(repository, config, groups) {
     if (!matches.length) {
       throw new ValidationError(`Package glob "${group.glob}" did not match any directories under ${root}.`);
     }
+    if (group.id && 1 < matches.length) {
+      throw new ValidationError(`The package identifier "${group.id}" would name every one of the ${matches.length} directories that the glob "${group.glob}" matches; narrow the glob or use idFrom.`);
+    }
     for (const relativePath of matches) {
       const directory = path4.join(root, relativePath);
-      const name = await packageName(directory, relativePath, group.idFrom ?? "path");
+      const name = group.id ? group.id : await packageName(directory, relativePath, group.idFrom ?? "path");
       if (packages.some((pkg) => pkg.name === name)) {
         throw new ValidationError(`Package identifier "${name}" is configured more than once.`);
       }
@@ -92953,6 +93037,7 @@ function report(context, diagnostics, sourceDir) {
 function createI18nCommand(operation) {
   return {
     name: `i18n-${operation}`,
+    acceptsPositionals: true,
     usage: `i18n-${operation} [<source-dir>] [options]`,
     summary: "pot" === operation ? "Extract WordPress source strings into a reproducible POT." : "Audit WordPress source strings without writing files.",
     help: `Options:
@@ -94007,6 +94092,7 @@ function getGitDeploySummary(context, input) {
 // ../../js/wp-release/dist/commands/zip.js
 var zip_default = {
   name: "zip",
+  acceptsPositionals: true,
   usage: "zip [<source-dir>] [options] | zip --package <name> [options]",
   summary: "Create a ZIP archive of a plugin or theme with a {slug}/ root folder.",
   help: `Arguments:
@@ -94267,6 +94353,7 @@ async function buildPackage(input) {
 // ../../js/wp-release/dist/commands/build.js
 var build_default = {
   name: "build",
+  acceptsPositionals: true,
   usage: "build [<source-dir>] --output <dir> [options] | build --package <name> --output <dir>",
   summary: "Copy the selected release files into an output directory.",
   help: `Options:
@@ -94346,6 +94433,7 @@ import { mkdir as mkdir6, writeFile as writeFile7 } from "node:fs/promises";
 import { dirname as dirname7, basename as basename11, resolve as resolve16 } from "node:path";
 var checksums_default = {
   name: "checksums",
+  acceptsPositionals: true,
   usage: "checksums [<source-dir>] [options]",
   summary: "Write the MD5 and SHA-256 hashes of every distributed file to a checksums manifest.",
   help: `Arguments:
@@ -94435,6 +94523,7 @@ matches the ZIP contents.`,
 import { resolve as resolve17 } from "node:path";
 var sign_default = {
   name: "sign",
+  acceptsPositionals: true,
   usage: "sign <file>... [options]",
   summary: "Sign files with Ed25519, writing a detached <file>.sig next to each.",
   help: `Arguments:
@@ -94807,6 +94896,7 @@ async function verifyTarget(input) {
 }
 var verify_default = {
   name: "verify",
+  acceptsPositionals: true,
   usage: "verify [<source-dir>] --checksums <file> [options]",
   summary: "Check the files of a plugin or theme directory or ZIP against a checksums manifest.",
   help: `Arguments:
@@ -94930,6 +95020,7 @@ function getGitTag(gitTag) {
 }
 var version_check_default = {
   name: "version-check",
+  acceptsPositionals: true,
   usage: "version-check [<source-dir>] [options]",
   summary: "Check that the Version header, readme Stable tag, constants and git tag agree.",
   help: `Arguments:
@@ -96007,6 +96098,7 @@ function getDeployInputFromArgs(input) {
 }
 var deploy_svn_default = {
   name: "deploy-svn",
+  acceptsPositionals: true,
   usage: "deploy-svn [<source-dir>] [options] | deploy-svn --release-ref <ref> [--package <name>] [--list] [--dry-run]",
   summary: "Deploy a plugin to the WordPress.org plugin SVN repository.",
   help: `Arguments:
@@ -96520,6 +96612,7 @@ function getGitDeployInputFromArgs(values, positionals, cwd) {
 }
 var deploy_git_default = {
   name: "deploy-git",
+  acceptsPositionals: true,
   usage: "deploy-git [<source-dir>] --git-url <url> [options] | deploy-git --release-ref <ref> [--package <name>] [--list] [--dry-run]",
   summary: "Deploy the files of a plugin, theme or package to a Git repository as a release commit.",
   help: `Arguments:
@@ -96692,6 +96785,7 @@ var changesetProjectArgs = {
   "version-php-constant": { type: "string", multiple: true },
   "version-git-tag": { type: "string", multiple: true },
   "version-from": { type: "string" },
+  "project-name": { type: "string" },
   "base-branch": { type: "string" },
   remote: { type: "string" },
   "changesets-dir": { type: "string" },
@@ -96709,6 +96803,9 @@ Single-project options (without a release config file):
   --version-php-constant <file>#<constant>  PHP constant source/target (repeatable)
   --version-git-tag <pattern>               Git tag source only; use {version}
   --version-from <kind>[:<file>]            Choose the source; constants use file#constant
+  --project-name <name>                    Changeset identifier of the package,
+                                           instead of the manifest name or the
+                                           checkout directory basename
   --base-branch <branch>                   Default comparison branch on the remote
   --remote <name>                          Git remote (default: origin)
   --changesets-dir <dir>                   Changeset directory (default: .changeset)
@@ -96762,6 +96859,7 @@ function parseChangesetProjectArgs(values) {
   }
   const strings = {
     "version-from": "versionFrom",
+    "project-name": "projectName",
     "base-branch": "baseBranch",
     remote: "remote",
     "changesets-dir": "changesets",
@@ -97156,7 +97254,13 @@ async function resolveSingleProjectConfig(cwd, options2 = {}, tagFormat) {
     root: ".",
     changesets: options2.changesets ?? ".changeset",
     tagFormat: tagFormat ?? "v{version}",
-    packages: [{ glob: ".", idFrom, version: { from, to: targets } }]
+    packages: [
+      {
+        glob: ".",
+        ...options2.projectName ? { id: options2.projectName } : { idFrom },
+        version: { from, to: targets }
+      }
+    ]
   };
 }
 
@@ -97763,8 +97867,9 @@ var FileJournal = class {
 
 // ../../js/wp-release/dist/release-tags.js
 function selectTagPackages(packages, names, version) {
-  if (void 0 !== version && !names.length && 1 === packages.length && "." === packages[0]?.path) {
-    names = [packages[0].name];
+  const sole = 1 === packages.length ? packages[0] : void 0;
+  if (void 0 !== version && !names.length && sole) {
+    names = [sole.name];
   }
   if (void 0 !== version && 1 !== names.length) {
     throw new ValidationError("An expected version requires exactly one package.");
@@ -97800,6 +97905,18 @@ async function getReleaseNotes(repository, config, pkg, release, end) {
     throw new ValidationError(`The releaseNotes formatter didn't return a string for package "${pkg.name}".`);
   }
   return formatted.trim();
+}
+async function getReleaseTitle(config, pkg, version, tag) {
+  const untrimmed = config.releaseTitle ? await formatReleaseTitle(config.releaseTitle, {
+    package: toChangesetPackage(pkg),
+    version,
+    tag
+  }) : getDefaultReleaseTitle(pkg, version);
+  const title = untrimmed.trim();
+  if (!title) {
+    throw new ValidationError(`The release title of package "${pkg.name}" must not be empty.`);
+  }
+  return title;
 }
 
 // ../../js/wp-release/dist/changeset-release.js
@@ -97843,6 +97960,11 @@ var ChangesetRelease = class {
     const config = await this.requireConfig();
     const packages = await discoverPackages(this.repository, config);
     return packages.map(toChangesetPackage);
+  }
+  /** Get packages with their resolved release group metadata. */
+  async getConfiguredPackages() {
+    const config = await this.requireConfig();
+    return discoverConfiguredPackages(this.repository, config);
   }
   /**
    * Create a Changesets-compatible Markdown file.
@@ -97934,6 +98056,10 @@ var ChangesetRelease = class {
       throw new ValidationError("Listing untagged releases cannot be combined with pushing tags.");
     }
     const context = await this.requireContext();
+    if (void 0 !== options2.releaseTitle) {
+      assertReleaseTitlePlaceholders("--release-title", options2.releaseTitle);
+    }
+    const config = options2.releaseTitle ? { ...context.config, releaseTitle: options2.releaseTitle } : context.config;
     const selected = selectTagPackages(context.packages, resolvePackageNames(context.packages, options2.packages ?? []), options2.version);
     const packages = options2.since ? (await getChangedPackages(this.repository, selected, options2.since)).packages : selected;
     const results = [];
@@ -97945,6 +98071,7 @@ var ChangesetRelease = class {
         throw new ValidationError(`Package "${pkg.name}" is at version ${version}, not ${options2.version}.`);
       }
       const tag = formatTag(tagFormat, pkg, version);
+      const title = await getReleaseTitle(config, pkg, version, tag);
       const exists2 = await this.repository.tagExists(tag);
       if (!exists2) {
         await verifyVersionTargets(this.repository, pkg, version);
@@ -97958,7 +98085,7 @@ var ChangesetRelease = class {
         package: pkg.name,
         version,
         tag,
-        title: `${pkg.name}@${version}`,
+        title,
         ...previousTag ? { previousTag } : {},
         prerelease: isPrerelease2(version),
         exists: exists2,
@@ -98335,7 +98462,8 @@ var changesetTagArgs = {
   untagged: { type: "boolean" },
   since: { type: "string" },
   package: { type: "string", multiple: true },
-  version: { type: "string" }
+  version: { type: "string" },
+  "release-title": { type: "string" }
 };
 function parseChangesetTagArgs(values) {
   const args = {
@@ -98344,7 +98472,8 @@ function parseChangesetTagArgs(values) {
     untagged: getBoolean(values, "untagged"),
     since: getString(values, "since"),
     packages: getStrings(values, "package"),
-    version: getString(values, "version")?.trim()
+    version: getString(values, "version")?.trim(),
+    releaseTitle: getString(values, "release-title")?.trim()
   };
   if ("" === args.since?.trim()) {
     throw new ValidationError("--since <ref> must not be empty.");
@@ -98354,6 +98483,9 @@ function parseChangesetTagArgs(values) {
   }
   if ("" === args.version) {
     throw new ValidationError("--version <version> must not be empty.");
+  }
+  if ("" === args.releaseTitle) {
+    throw new ValidationError("--release-title <template> must not be empty.");
   }
   if (void 0 !== args.version && args.packages.length > 1) {
     throw new ValidationError("--version <version> accepts at most one --package <name>.");
@@ -98367,7 +98499,7 @@ function parseChangesetTagArgs(values) {
 // ../../js/wp-release/dist/commands/changeset-add.js
 async function getChangedPackageBumps(release, input, bump) {
   const packages = await release.getPackages();
-  if (!input.since && 1 === packages.length && "." === packages[0]?.path) {
+  if (!input.since && 1 === packages.length && packages[0]) {
     return { [packages[0].name]: bump };
   }
   const status = await release.getStatus({
@@ -98433,11 +98565,12 @@ var changeset_add_default = {
 
 Use --package and --bump pairs for package releases, or --empty for changes
 that should pass the status check without producing a release. A single
---bump without --package selects the sole root package, or releases packages
-that changed since the base
-ref, including uncommitted files, and have no changeset yet. Without
---package and --bump in a terminal, the command asks for the packages, with
-the changed ones preselected, their bumps and the release note.${changesetProjectHelp}`,
+--bump without --package releases the sole package of the repository, or,
+with more than one package, the packages that changed since the base ref,
+including uncommitted files, and have no changeset yet. --since selects
+the changed packages instead. Without --package and --bump in a terminal,
+the command asks for the packages, with the changed ones preselected, their
+bumps and the release note.${changesetProjectHelp}`,
   options: { ...changesetAddArgs, ...changesetProjectArgs },
   async run({ values, cwd, configFile, tagFormat, logger: logger2, terminal }) {
     const input = parseChangesetAddArgs(values);
@@ -98610,7 +98743,12 @@ var changeset_tag_default = {
                          the configured root (repeatable)
   --version <version>    Fail unless the selected package is at this version;
                          the version to tag for packages versioned by git tags.
-                         A sole root package is selected without --package
+                         A sole package is selected without --package
+  --release-title <t>    Title of the releases, like 'Release {version}',
+                         replacing the releaseTitle of the config. The
+                         placeholders {name}, {path}, {version} and {tag} are
+                         replaced; the default is name@version, or the
+                         version for a package at the repository root
   --push                 Push newly created tags to the configured remote
                          (default: origin), one at a time
 
@@ -98689,6 +98827,11 @@ function getConfigArgs(values) {
     ...tagFormat ? { tagFormat } : {}
   };
 }
+function rejectPositionals(command, positionals) {
+  if (!command.acceptsPositionals && positionals.length) {
+    throw new ValidationError(`wp-release ${command.name} does not accept positional arguments, like "${positionals[0]}"; pass a named option instead, or ${command.name} --help for the usage.`);
+  }
+}
 async function execute(name, args, context) {
   const command = commands.find(({ name: commandName }) => name === commandName);
   if (!command) {
@@ -98699,6 +98842,7 @@ async function execute(name, args, context) {
     options: { ...globalArgs, ...command.options },
     allowPositionals: true
   });
+  rejectPositionals(command, positionals);
   const configArgs = getConfigArgs(values);
   const configFile = configArgs.configFile ?? context.configFile;
   const { tagFormat } = configArgs;
